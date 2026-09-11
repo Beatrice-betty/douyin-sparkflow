@@ -1,7 +1,9 @@
 import unittest
+from datetime import datetime, timezone
 
 from core import friends, tasks
 from core.friends import FriendIdentityCollector, build_friend_records, normalize_friend_name
+from webui import ops
 
 
 # Shape copied from a real /aweme/v1/creator/im/user_detail/ reply; every value is
@@ -150,6 +152,46 @@ class TargetResolutionTests(unittest.TestCase):
     def test_a_legacy_name_target_is_untouched(self):
         mapping = tasks._build_normalized_target_map(["旧名字"], {"10000001": "示例好友甲"})
         self.assertEqual(mapping, {"旧名字": "旧名字"})
+
+
+class ConsoleTargetLabelTests(unittest.TestCase):
+    """The console shows the nickname; the stored target stays the 抖音号."""
+
+    def setUp(self):
+        self.now = datetime(2026, 7, 10, 14, 0, tzinfo=timezone.utc)
+
+    def test_an_id_target_shows_the_name_the_index_learned(self):
+        account = {
+            "friend_index": {
+                "示例好友甲": {
+                    "visibleName": "示例好友甲",
+                    "normalizedName": "示例好友甲",
+                    "stableKeys": ["douyin_id:10000001"],
+                }
+            }
+        }
+        status = ops._base_target_status(account, "10000001", self.now)
+        self.assertEqual(status["target"], "10000001")
+        self.assertEqual(status["targetLabel"], "示例好友甲")
+
+    def test_the_last_friend_refresh_is_used_before_any_scan(self):
+        account = {"friends_cache": [{"id": "10000001", "name": "示例好友甲"}]}
+        status = ops._base_target_status(account, "10000001", self.now)
+        self.assertEqual(status["targetLabel"], "示例好友甲")
+
+    def test_an_unknown_target_still_shows_something(self):
+        status = ops._base_target_status({}, "10000001", self.now)
+        self.assertEqual(status["targetLabel"], "10000001")
+
+    def test_a_legacy_name_target_keeps_showing_its_name(self):
+        account = {"friend_index": {"旧名字": {"visibleName": "旧名字", "stableKeys": []}}}
+        status = ops._base_target_status(account, "旧名字", self.now)
+        self.assertEqual(status["targetLabel"], "旧名字")
+
+    def test_an_untouched_cache_entry_does_not_break_the_label(self):
+        account = {"friends_cache": ["旧版缓存里的名字"]}
+        status = ops._base_target_status(account, "10000001", self.now)
+        self.assertEqual(status["targetLabel"], "10000001")
 
 
 if __name__ == "__main__":
